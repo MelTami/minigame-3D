@@ -1,89 +1,116 @@
 import glm
 
+
 class Sentinela:
-    def __init__(self, inicio: glm.vec3, fim: glm.vec3, velocidade: float = 2.2):
-        self.inicio = glm.vec3(inicio)
-        self.fim = glm.vec3(fim)
-        self.pos = glm.vec3(inicio)
+    def __init__(self, pos_inicial: glm.vec3, eixo: str, amplitude: float, velocidade: float):
+        self.pos_base = glm.vec3(pos_inicial)
+        self.pos = glm.vec3(pos_inicial)
+        self.eixo = eixo
+        self.amplitude = amplitude
         self.velocidade = velocidade
-        self.indo = True
+        self.direcao = 1.0
+        self.deslocamento = 0.0
         self.raio = 0.45
 
     def atualizar(self, dt: float):
-        alvo = self.fim if self.indo else self.inicio
-        vetor = alvo - self.pos
-        dist = glm.length(vetor)
-        if dist < 0.05:
-            self.indo = not self.indo
+        self.deslocamento += self.direcao * self.velocidade * dt
+        if self.deslocamento > self.amplitude:
+            self.deslocamento = self.amplitude
+            self.direcao = -1.0
+        elif self.deslocamento < -self.amplitude:
+            self.deslocamento = -self.amplitude
+            self.direcao = 1.0
+
+        self.pos = glm.vec3(self.pos_base)
+        if self.eixo == 'x':
+            self.pos.x += self.deslocamento
         else:
-            direcao = glm.normalize(vetor)
-            self.pos += direcao * min(self.velocidade * dt, dist)
+            self.pos.z += self.deslocamento
+
 
 class Mapa:
+    """
+    Representa o labirinto 3D, suas caixas de colisao AABB,
+    as chaves coletaveis, as sentinelas e o altar de saida.
+    """
     def __init__(self, tile_size: float = 2.0):
         self.tile_size = tile_size
-        self.grid = [
-            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-            [1, 4, 0, 0, 1, 2, 0, 0, 0, 1],
-            [1, 0, 1, 0, 1, 1, 1, 1, 0, 1],
-            [1, 0, 1, 0, 0, 0, 0, 0, 0, 1],
-            [1, 2, 1, 1, 1, 0, 1, 1, 0, 1],
-            [1, 0, 0, 0, 0, 0, 1, 2, 0, 1],
-            [1, 0, 1, 1, 0, 1, 1, 1, 0, 1],
-            [1, 0, 0, 0, 0, 0, 0, 0, 3, 1],
-            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        # 1 = Parede, 0 = Corredor, P = Jogador, K = Chave, E = Saida (.off)
+        self.layout = [
+            "1111111111",
+            "1P001000K1",
+            "1010101101",
+            "1010001001",
+            "1011101011",
+            "1K00000001",
+            "1110111101",
+            "1K001E0001",
+            "1111111111",
         ]
         self.paredes = []
         self.chaves = []
-        self.pos_saida = glm.vec3(0.0)
-        self.pos_inicial_jogador = glm.vec3(2.0, 1.0, 2.0)
-        self._construir()
+        self.sentinelas = []
+        self.pos_inicial_jogador = glm.vec3(2.0, 0.5, 2.0)
+        self.pos_saida = glm.vec3(10.0, 0.0, 14.0)
 
-        ts = self.tile_size
-        self.sentinelas = [
-            Sentinela(glm.vec3(3 * ts, 0.85, 3 * ts), glm.vec3(8 * ts, 0.85, 3 * ts), velocidade=2.4),
-            Sentinela(glm.vec3(1 * ts, 0.85, 7 * ts), glm.vec3(7 * ts, 0.85, 7 * ts), velocidade=2.8),
-        ]
+        self._construir_mapa()
 
-    def _construir(self):
-        half = self.tile_size / 2.0
-        for r, row in enumerate(self.grid):
-            for c, cell in enumerate(row):
-                x = c * self.tile_size
-                z = r * self.tile_size
-                if cell == 1:
+    def _construir_mapa(self):
+        meio = self.tile_size * 0.5
+        for linha_idx, linha in enumerate(self.layout):
+            for col_idx, celula in enumerate(linha):
+                wx = col_idx * self.tile_size
+                wz = linha_idx * self.tile_size
+
+                if celula == '1':
                     self.paredes.append({
-                        "min_x": x - half,
-                        "max_x": x + half,
-                        "min_z": z - half,
-                        "max_z": z + half,
-                        "centro": glm.vec3(x, 1.25, z)
+                        "centro": glm.vec3(wx, 1.25, wz),
+                        "min_x": wx - meio,
+                        "max_x": wx + meio,
+                        "min_y": 0.0,
+                        "max_y": 2.5,
+                        "min_z": wz - meio,
+                        "max_z": wz + meio,
                     })
-                elif cell == 2:
+                elif celula == 'P':
+                    self.pos_inicial_jogador = glm.vec3(wx, 0.55, wz)
+                elif celula == 'K':
                     self.chaves.append({
-                        "pos": glm.vec3(x, 0.9, z),
+                        "pos": glm.vec3(wx, 0.55, wz),
                         "coletada": False,
-                        "raio": 0.35
+                        "raio": 0.42
                     })
-                elif cell == 3:
-                    self.pos_saida = glm.vec3(x, 0.0, z)
-                elif cell == 4:
-                    self.pos_inicial_jogador = glm.vec3(x, 1.0, z)
+                elif celula == 'E':
+                    self.pos_saida = glm.vec3(wx, 0.0, wz)
 
-    def colide_esfera_aabb(self, px: float, pz: float, raio: float) -> bool:
+        # Sentinelas patrulhando corredores estrategicos
+        self.sentinelas.append(Sentinela(glm.vec3(10.0, 0.48, 10.0), eixo='x', amplitude=4.2, velocidade=2.8))
+        self.sentinelas.append(Sentinela(glm.vec3(6.0, 0.48, 4.0), eixo='z', amplitude=2.2, velocidade=2.4))
+
+    def colide_esfera_aabb(self, x: float, y: float, z: float, raio: float) -> bool:
         for p in self.paredes:
-            closest_x = max(p["min_x"], min(px, p["max_x"]))
-            closest_z = max(p["min_z"], min(pz, p["max_z"]))
-            dx = px - closest_x
-            dz = pz - closest_z
-            if (dx * dx + dz * dz) < (raio * raio):
+            cx = max(p["min_x"], min(x, p["max_x"]))
+            cy = max(p["min_y"], min(y, p["max_y"]))
+            cz = max(p["min_z"], min(z, p["max_z"]))
+
+            dx = x - cx
+            dy = y - cy
+            dz = z - cz
+            if (dx * dx + dy * dy + dz * dz) < (raio * raio):
                 return True
         return False
 
-    def mover_com_colisao(self, pos_atual: glm.vec3, deslocamento: glm.vec3, raio: float = 0.38) -> glm.vec3:
-        nova_pos = glm.vec3(pos_atual)
-        if not self.colide_esfera_aabb(nova_pos.x + deslocamento.x, nova_pos.z, raio):
-            nova_pos.x += deslocamento.x
-        if not self.colide_esfera_aabb(nova_pos.x, nova_pos.z + deslocamento.z, raio):
-            nova_pos.z += deslocamento.z
+    def mover_com_colisao(self, pos: glm.vec3, deslocamento: glm.vec3, raio: float = 0.38) -> glm.vec3:
+        nova_pos = glm.vec3(pos)
+
+        # Testa eixo X em 3D (deslizamento suave ao longo das paredes)
+        teste_x = nova_pos.x + deslocamento.x
+        if not self.colide_esfera_aabb(teste_x, nova_pos.y, nova_pos.z, raio):
+            nova_pos.x = teste_x
+
+        # Testa eixo Z em 3D
+        teste_z = nova_pos.z + deslocamento.z
+        if not self.colide_esfera_aabb(nova_pos.x, nova_pos.y, teste_z, raio):
+            nova_pos.z = teste_z
+
         return nova_pos

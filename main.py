@@ -56,10 +56,9 @@ class DungeonGame:
         glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 0)
         glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
 
-        self.largura, self.altura = 1100, 760
         self.window = glfw.create_window(
-            self.largura,
-            self.altura,
+            1100,
+            760,
             "Dungeon 3D | INICIO [ENTER / Clique: Jogar | C: 3a/1a Pessoa | TAB: Aerea | Scroll: Zoom]",
             None,
             None
@@ -70,6 +69,10 @@ class DungeonGame:
 
         glfw.make_context_current(self.window)
         self.ctx = moderngl.create_context()
+
+        # Inicializa com o tamanho real do framebuffer (evita salto em telas Retina/HiDPI)
+        self.largura, self.altura = glfw.get_framebuffer_size(self.window)
+        self.ctx.viewport = (0, 0, self.largura, self.altura)
 
         # Requisitos obrigatorios: teste de profundidade e descarte de faces traseiras
         self.ctx.enable(moderngl.DEPTH_TEST)
@@ -289,19 +292,19 @@ class DungeonGame:
             direcao = glm.normalize(direcao)
             self.player_pos = self.mapa.mover_com_colisao(self.player_pos, direcao * velocidade * dt, raio=0.38)
 
-        # Colisao Esfera-Esfera com as Chaves
+        # Colisao Esfera-Esfera 3D com as Chaves
         raio_jogador = 0.42
         for chave in self.mapa.chaves:
             if not chave["coletada"]:
-                dist = glm.distance(glm.vec2(self.player_pos.x, self.player_pos.z), glm.vec2(chave["pos"].x, chave["pos"].z))
+                dist = glm.distance(self.player_pos, chave["pos"])
                 if dist < (raio_jogador + chave["raio"]):
                     chave["coletada"] = True
                     self.chaves_coletadas += 1
 
-        # Atualizar Sentinelas e checar colisao Esfera-Esfera
+        # Atualizar Sentinelas e checar colisao Esfera-Esfera 3D
         for sent in self.mapa.sentinelas:
             sent.atualizar(dt)
-            dist = glm.distance(glm.vec2(self.player_pos.x, self.player_pos.z), glm.vec2(sent.pos.x, sent.pos.z))
+            dist = glm.distance(self.player_pos, sent.pos)
             if dist < (raio_jogador + sent.raio) and self.invulneravel_timer == 0.0:
                 self.vidas -= 1
                 self.invulneravel_timer = 1.5
@@ -311,8 +314,8 @@ class DungeonGame:
                     self.girando_camera = False
                     return
 
-        # Checar colisao com o Altar/Calice (.off) da Saida
-        dist_saida = glm.distance(glm.vec2(self.player_pos.x, self.player_pos.z), glm.vec2(self.mapa.pos_saida.x, self.mapa.pos_saida.z))
+        # Checar colisao 3D com o Altar/Calice (.off) da Saida
+        dist_saida = glm.distance(self.player_pos, self.mapa.pos_saida)
         if dist_saida < 0.85 and self.chaves_coletadas >= self.total_chaves:
             self.estado = EstadoJogo.VITORIA
             self.girando_camera = False
@@ -379,7 +382,7 @@ class DungeonGame:
         for passo in range(1, 11):
             d = (dist_max * passo) / 10.0
             teste = alvo - dir_horizontal * d
-            if not self.mapa.colide_esfera_aabb(teste.x, teste.z, raio=0.25):
+            if not self.mapa.colide_esfera_aabb(teste.x, teste.y, teste.z, raio=0.25):
                 dist_segura = d
             else:
                 break
